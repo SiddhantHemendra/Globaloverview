@@ -1,0 +1,131 @@
+---
+title: "UNICEF Child Labour & Life Expectancy Analysis"
+toc: TRUE
+format: 
+  html:
+    self-contained: true
+editor: visual
+---
+
+
+```{r, warning=FALSE, message=FALSE, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(leaflet)
+```
+
+## Gender Wise Child Labour:
+
+A bar chart has been constructed to represent the gender-specific child labour threshold and is attached below. Surprisingly, the child labour barrier is higher for females than for males, at 66.58% and 55.27%, respectively. The total child labour threshold is 60.77%, which is quite high.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+data <- read.csv("unicef_indicator_1.csv")
+data2 <- read.csv("unicef_metadata.csv")
+
+master <- data %>% inner_join(data2, by = "country")
+
+sexWise_ChildLabour <- master %>%
+  group_by(sex) %>%
+  summarise(Avg_Value = round(mean(obs_value, na.rm = T), 2)) %>%
+  arrange(-Avg_Value)
+
+# Create the bar chart
+ggplot(sexWise_ChildLabour, aes(x = sex, y = Avg_Value, fill = sex)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  geom_text(aes(label = Avg_Value),
+            vjust = 1.0, color = "white", size = 3) +
+  labs(title = "Gender Wise Average Child Labour Thresholds", 
+       x = "Gender",
+       y = "Average Child Labour Threshold") +
+  guides(fill = FALSE) 
+```
+
+## Relationship Between Military Expense of GDP and Life Expectancy:
+
+A scatter chart is generated to see whether there is a relationship between military expenditure on GDP and life expectancy at birth. A scatter plot with a regression line fitted to it is created and attached below. The regression line is downward, indicating a negative association between the two variables. This suggests that increasing military expenditure of GDP reduces life expectancy at birth, but decreasing military expenditure of GDP increases life expectancy at birth.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Create the scatter plot with regression line
+ggplot(master, aes(x = Military.expenditure....of.GDP., 
+                   y = Life.expectancy.at.birth..total..years.)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Relationship Between Military Expenditure & Life Expectancy",
+       x = "Military Expenditure of GDP", y = "Life Expectancy")+
+  theme_minimal()
+```
+
+## Trend of Military Expenditure of GDP:
+
+A bar chart was developed to depict the average military expenditure of GDP over time, which is attached below. It is clear that the average military expenditure as a percentage of GDP has been decreasing over time. We notice a very significant negative trend, indicating that average life expectancy increases over time. After 1982, the military expense of GDP decreased.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ME_Year <- master %>%
+  group_by(year) %>%
+  summarise(Military_Expenditure = mean(Military.expenditure....of.GDP.,
+                                   na.rm = T))
+
+# Line chart with markers
+ggplot(ME_Year, aes(x = year, y = Military_Expenditure, group = 1)) +
+  geom_line(lwd = 1) +
+  geom_point(color = "red", size = 2) + 
+  labs(title = "Average Military Expenditure of GDP Over Time", 
+       x = "Year", 
+       y = "Military Expenditure of GDP") +
+  theme_minimal()
+```
+
+## Military Expenditure of GDP By Country:
+
+Finally, a world map is created which is attached below. The map shows the average military expenditure of GDP by each country. The top 3 countries with highest average military expenditure of GDP are Israel, Saudia Arabia and Qatar.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Calculate mean military expenditure by country
+ME_Country <- master %>%
+  group_by(alpha_3_code.x) %>%
+  summarise(Military_Expenditure = mean(Military.expenditure....of.GDP.,
+                                        na.rm = TRUE))
+names(ME_Country)[1] <- "ISO3_CODE"
+
+# Load country polygons and get centroids
+final <- giscoR::gisco_get_countries() %>% 
+  st_centroid() %>%
+  inner_join(ME_Country, by = "ISO3_CODE")
+
+# Extract latitude and longitude from the 'geometry' column
+final$latitude <- st_coordinates(final)[, 2]
+final$longitude <- st_coordinates(final)[, 1]
+
+# Define a function to scale the radius based on military expenditure
+scale_radius <- function(x) {
+  # Define the range of circle marker sizes
+  min_radius <- 3
+  max_radius <- 15
+  
+  # Scale the military expenditure values to the range of circle marker sizes
+  scaled_values <- scales::rescale(x, to = c(min_radius, max_radius))
+  
+  return(scaled_values)
+}
+
+# Create a leaflet map
+m_leaflet <- leaflet() %>%
+  addTiles() %>%
+  setView(lng = 0, lat = 30, zoom = 2)
+
+# Add markers for each country with military expenditure as popup
+m_leaflet %>% 
+  addCircleMarkers(
+    data = final,
+    lng = ~longitude,  
+    lat = ~latitude,
+    radius = ~scale_radius(Military_Expenditure),  # Use scaled radius based on military expenditure
+    popup = ~paste(NAME_ENGL, "<br>", "Military Expenditure:", round(Military_Expenditure, 2)),
+    label = ~NAME_ENGL,
+    color = "red",
+    fillOpacity = 0.8
+  )
+```
+
+
